@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de Rotas - MSFS 2024</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #e2e8f0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 4px; }
+        
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #map { height: 100%; width: 100%; z-index: 1; background: #0f172a; }
+
+        .input-group label { display: block; font-size: 0.875rem; color: #94a3b8; margin-bottom: 0.25rem; }
+        .input-group select {
+            width: 100%; background-color: #1e293b; border: 1px solid #334155;
+            color: white; padding: 0.5rem; border-radius: 0.375rem; outline: none;
+        }
+
+        .stat-card {
+            background: #1e293b; border-radius: 0.5rem; padding: 1rem; border-left: 4px solid #3b82f6;
+            display: flex; flex-direction: column; justify-content: space-between;
+        }
+
+        /* Área de Adsense */
+        .ad-container {
+            background: #1e293b;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            min-height: 90px;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col md:flex-row overflow-hidden">
+
+    <!-- Painel Lateral -->
+    <div class="w-full md:w-1/3 lg:w-1/4 flex flex-col p-4 gap-4 overflow-y-auto z-10 bg-slate-900 border-r border-slate-700 shadow-xl">
+        <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-plane-circle-check text-3xl text-blue-500"></i>
+                <div>
+                    <h1 class="text-xl font-bold text-white">GERADOR DE VOO</h1>
+                    <p class="text-xs text-blue-400" data-i18n="subtitle">Gerador de voo aleatório por IA.</p>
+                </div>
+            </div>
+            <button onclick="toggleLanguage()" class="flex items-center justify-center bg-slate-800 hover:bg-slate-700 w-10 h-10 rounded-full border border-slate-600 transition-all">
+                <span id="langFlag" class="text-xl">US</span>
+            </button>
+        </div>
+
+        <!-- Formulário -->
+        <div class="glass-panel p-4 rounded-xl space-y-4">
+            <div class="input-group">
+                <label><i class="fa-solid fa-earth-americas mr-1"></i> <span data-i18n="labelOrigin">Continente de Origem</span></label>
+                <select id="continentSelect">
+                    <option value="any" data-i18n="anywhere">🌍 Mundo Inteiro</option>
+                    <option value="South America">América do Sul</option>
+                    <option value="North America">América do Norte</option>
+                    <option value="Europe">Europa</option>
+                    <option value="Asia">Ásia</option>
+                    <option value="Africa">África</option>
+                    <option value="Oceania">Oceania</option>
+                </select>
+            </div>
+
+            <div class="input-group">
+                <label><i class="fa-solid fa-plane mr-1"></i> <span data-i18n="labelAircraft">Aeronave (MSFS 2024)</span></label>
+                <select id="aircraftSelect"></select>
+            </div>
+
+            <div class="input-group">
+                <label><i class="fa-solid fa-clock mr-1"></i> <span data-i18n="labelDuration">Duração Desejada</span></label>
+                <select id="durationSelect"></select>
+            </div>
+
+            <button onclick="generateRoute()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded transition flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20">
+                <i class="fa-solid fa-route"></i> <span data-i18n="btnGenerate">Gerar Rota</span>
+            </button>
+        </div>
+
+        <!-- Resultados -->
+        <div id="resultsPanel" class="hidden flex-col gap-3">
+            <div class="glass-panel p-4 rounded-xl border-l-4 border-green-500">
+                <div class="flex justify-between items-center mb-2 font-mono text-xs text-gray-400">
+                    <span data-i18n="flightLog">LOG DE VOO</span>
+                    <button onclick="speakFlightPlan()" class="text-blue-400 hover:text-white transition"><i class="fa-solid fa-volume-high"></i></button>
+                </div>
+                <div class="flex justify-between items-center text-2xl font-bold font-mono text-green-400">
+                    <span id="depICAO"></span>
+                    <i class="fa-solid fa-plane text-sm text-gray-500"></i>
+                    <span id="arrICAO"></span>
+                </div>
+                <div class="text-[10px] text-gray-500 mt-1 flex justify-between">
+                    <span id="depName" class="truncate w-1/2"></span>
+                    <span id="arrName" class="truncate w-1/2 text-right"></span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 text-sm">
+                <div class="stat-card">
+                    <div class="text-xs text-gray-400" data-i18n="statDistance">Distância</div>
+                    <div id="distanceVal" class="font-bold text-white"></div>
+                </div>
+                <div class="stat-card border-purple-500">
+                    <div class="text-xs text-gray-400" data-i18n="statETE">Tempo Estimado</div>
+                    <div id="eteVal" class="font-bold text-white"></div>
+                </div>
+                <div class="stat-card border-orange-500">
+                    <div class="text-xs text-gray-400" data-i18n="statHDG">Proa (HDG)</div>
+                    <div id="hdgVal" class="font-bold text-white"></div>
+                </div>
+                <div class="stat-card border-cyan-500">
+                    <div class="text-xs text-gray-400" data-i18n="statALT">Altitude</div>
+                    <div id="altVal" class="font-bold text-white"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="messageBox" class="hidden bg-red-500/20 border border-red-500 text-red-200 p-3 rounded text-sm text-center"></div>
+    </div>
+
+    <!-- Lado Direito (Ads + Mapa) -->
+    <div class="flex-1 flex flex-col relative">
+        
+        <!-- Mapa -->
+        <div id="map" class="flex-1"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const apiKey = ""; 
+        let currentLang = 'pt';
+
+        const i18n = {
+            pt: {
+                subtitle: "Gerador de voo aleatório por IA.",
+                labelOrigin: "Continente de Origem",
+                labelAircraft: "Aeronave (MSFS 2024)",
+                labelDuration: "Duração Desejada",
+                btnGenerate: "Gerar Rota",
+                flightLog: "LOG DE VOO",
+                statDistance: "Distância",
+                statETE: "Tempo Estimado",
+                statHDG: "Proa (HDG)",
+                statALT: "Altitude",
+                anywhere: "🌍 Mundo Inteiro",
+                durShort: "Curto",
+                durMedium: "Médio",
+                durLong: "Longo",
+                errNoRoute: "Nenhuma rota encontrada para este avião neste continente com esta duração."
+            },
+            en: {
+                subtitle: "AI-powered random flight generator.",
+                labelOrigin: "Origin Continent",
+                labelAircraft: "Aircraft (MSFS 2024)",
+                labelDuration: "Desired Duration",
+                btnGenerate: "Generate Route",
+                flightLog: "FLIGHT LOG",
+                statDistance: "Distance",
+                statETE: "Estimated Time",
+                statHDG: "Heading (HDG)",
+                statALT: "Altitude",
+                anywhere: "🌍 Whole World",
+                durShort: "Short",
+                durMedium: "Medium",
+                durLong: "Long",
+                errNoRoute: "No route found for this aircraft in this continent with this duration."
+            }
+        };
+
+ const aircraftDB = {
+            "Aviões Comerciais (Airliners)": [
+                { name: "Airbus A310-300", speed: 440, type: 'jet' },
+                { name: "Airbus A320neo (v2)", speed: 450, type: 'jet' },
+                { name: "Airbus A321LR", speed: 450, type: 'jet' },
+                { name: "Airbus A330-200/300/P2F", speed: 480, type: 'jet' },
+                { name: "Airbus A330-743L BelugaXL", speed: 400, type: 'jet' },
+                { name: "Airbus A350-900/1000", speed: 490, type: 'jet' },
+                { name: "Boeing 737 MAX 8", speed: 450, type: 'jet' },
+                { name: "Boeing 747-8i / Freighter", speed: 490, type: 'jet' },
+                { name: "Boeing 747-400 LCF Dreamlifter", speed: 450, type: 'jet' },
+                { name: "Boeing 787-10 Dreamliner", speed: 490, type: 'jet' },
+                { name: "Boeing 777F (Freighter)", speed: 485, type: 'jet' },
+                { name: "Boeing 717-200", speed: 440, type: 'jet' }
+            ],
+            "Aviação Geral & Turboélices": [
+                { name: "Cessna 172 Skyhawk", speed: 115, type: 'prop' },
+                { name: "Cessna 208B Grand Caravan EX", speed: 185, type: 'turboprop' },
+                { name: "Cessna 400 Corvalis TTX", speed: 235, type: 'prop' },
+                { name: "Cirrus SR22T", speed: 180, type: 'prop' },
+                { name: "Daher TBM 930", speed: 320, type: 'turboprop' },
+                { name: "Pilatus PC-12 NGX", speed: 280, type: 'turboprop' },
+                { name: "Beechcraft King Air 350i", speed: 300, type: 'turboprop' },
+                { name: "Diamond DA62", speed: 190, type: 'prop' },
+                { name: "De Havilland Canada DHC-6 Twin Otter", speed: 150, type: 'turboprop' },
+                { name: "Cessna 408 SkyCourier", speed: 210, type: 'turboprop' }
+            ],
+            "Aviação Executiva (BizJets)": [
+                { name: "Cessna Citation CJ4", speed: 450, type: 'jet' },
+                { name: "Cessna Citation Longitude", speed: 480, type: 'jet' },
+                { name: "HondaJet HA420", speed: 420, type: 'jet' }
+            ],
+            "Helicópteros": [
+                { name: "Bell 407", speed: 130, type: 'heli' },
+                { name: "Airbus H125", speed: 135, type: 'heli' },
+                { name: "Airbus H160", speed: 150, type: 'heli' },
+                { name: "Sikorsky S-76", speed: 155, type: 'heli' },
+                { name: "Robinson R66", speed: 120, type: 'heli' },
+                { name: "Boeing CH-47D Chinook", speed: 160, type: 'heli' }
+            ],
+            "Militares": [
+                { name: "Lockheed Martin F-35A", speed: 700, type: 'fighter' },
+                { name: "Boeing F/A-18E Super Hornet", speed: 600, type: 'fighter' },
+                { name: "Airbus A400M Atlas", speed: 420, type: 'turboprop' },
+                { name: "Fairchild Republic A-10C Warthog", speed: 300, type: 'jet' },
+                { name: "C-17 Globemaster III", speed: 450, type: 'jet' }
+            ],
+            "Especiais & Históricos": [
+                { name: "Wright Flyer (1903)", speed: 26, type: 'prop' },
+                { name: "Douglas DC-3", speed: 150, type: 'prop' },
+                { name: "Hughes H-4 Hercules (Spruce Goose)", speed: 130, type: 'prop' },
+                { name: "Curtiss JN-4 Jenny", speed: 65, type: 'prop' },
+                { name: "Ryan NYP 'Spirit of St. Louis'", speed: 95, type: 'prop' },
+                { name: "Erickson S-64 AirCrane", speed: 100, type: 'heli' }
+            ]
+        };
+
+        const airportDB = [
+            // South America (Brasil)
+            { icao: "SBGR", name: "Guarulhos, São Paulo", lat: -23.435, lon: -46.473, continent: "South America" },
+            { icao: "SBSP", name: "Congonhas, São Paulo", lat: -23.626, lon: -46.656, continent: "South America" },
+            { icao: "SBGL", name: "Galeão, Rio", lat: -22.810, lon: -43.250, continent: "South America" },
+            { icao: "SBRJ", name: "Santos Dumont, Rio", lat: -22.910, lon: -43.163, continent: "South America" },
+            { icao: "SBBR", name: "Brasília", lat: -15.871, lon: -47.918, continent: "South America" },
+            { icao: "SBEG", name: "Manaus", lat: -3.035, lon: -60.050, continent: "South America" },
+            { icao: "SBKP", name: "Campinas Viracopos", lat: -23.007, lon: -47.134, continent: "South America" },
+            { icao: "SBFZ", name: "Fortaleza", lat: -3.776, lon: -38.532, continent: "South America" },
+            { icao: "SBPA", name: "Porto Alegre", lat: -29.994, lon: -51.171, continent: "South America" },
+            { icao: "SBCT", name: "Curitiba", lat: -25.531, lon: -49.175, continent: "South America" },
+            { icao: "SBRF", name: "Recife", lat: -8.126, lon: -34.922, continent: "South America" },
+            { icao: "SBSV", name: "Salvador", lat: -12.911, lon: -38.331, continent: "South America" },
+            { icao: "SBMG", name: "Maringá", lat: -23.479, lon: -52.012, continent: "South America" },
+            { icao: "SBCH", name: "Chapecó", lat: -27.134, lon: -52.661, continent: "South America" },
+            { icao: "SBCF", name: "Belo Horizonte Confins", lat: -19.624, lon: -43.971, continent: "South America" },
+            { icao: "SBFN", name: "Fernando de Noronha", lat: -3.854, lon: -32.423, continent: "South America" },
+            { icao: "SBMO", name: "Maceió", lat: -9.510, lon: -35.791, continent: "South America" },
+            { icao: "SBIT", name: "Itaituba", lat: -4.242, lon: -55.990, continent: "South America" },
+            // South America (Outros)
+            { icao: "SAEZ", name: "Ezeiza, Buenos Aires", lat: -34.822, lon: -58.535, continent: "South America" },
+            { icao: "SABE", name: "Aeroparque, B. Aires", lat: -34.559, lon: -58.415, continent: "South America" },
+            { icao: "SCEL", name: "Santiago, Chile", lat: -33.393, lon: -70.785, continent: "South America" },
+            { icao: "SPJC", name: "Lima, Peru", lat: -12.021, lon: -77.114, continent: "South America" },
+            { icao: "SKBO", name: "Bogotá, Colômbia", lat: 4.701, lon: -74.146, continent: "South America" },
+            { icao: "SUMU", name: "Montevideo, Uruguai", lat: -34.838, lon: -56.030, continent: "South America" },
+            { icao: "SGAS", name: "Asunción, Paraguai", lat: -25.240, lon: -57.519, continent: "South America" },
+            { icao: "SEQU", name: "Quito, Equador", lat: -0.129, lon: -78.357, continent: "South America" },
+            { icao: "SLVR", name: "Santa Cruz, Bolívia", lat: -17.644, lon: -63.135, continent: "South America" },
+            { icao: "SLLP", name: "La Paz, Bolívia", lat: -16.513, lon: -68.192, continent: "South America" },
+            
+            // North America
+            { icao: "KJFK", name: "New York JFK", lat: 40.641, lon: -73.778, continent: "North America" },
+            { icao: "KLAX", name: "Los Angeles Intl", lat: 33.941, lon: -118.408, continent: "North America" },
+            { icao: "KORD", name: "Chicago O'Hare", lat: 41.974, lon: -87.907, continent: "North America" },
+            { icao: "KATL", name: "Atlanta Hartsfield", lat: 33.640, lon: -84.427, continent: "North America" },
+            { icao: "KSFO", name: "San Francisco", lat: 37.619, lon: -122.374, continent: "North America" },
+            { icao: "KSEA", name: "Seattle-Tacoma", lat: 47.448, lon: -122.308, continent: "North America" },
+            { icao: "KMIA", name: "Miami Intl", lat: 25.795, lon: -80.287, continent: "North America" },
+            { icao: "KDFW", name: "Dallas/Fort Worth", lat: 32.899, lon: -97.040, continent: "North America" },
+            { icao: "KDEN", name: "Denver Intl", lat: 39.856, lon: -104.673, continent: "North America" },
+            { icao: "KLAS", name: "Las Vegas McCarran", lat: 36.084, lon: -115.152, continent: "North America" },
+            { icao: "KBOS", name: "Boston Logan", lat: 42.363, lon: -71.006, continent: "North America" },
+            { icao: "KPHX", name: "Phoenix Sky Harbor", lat: 33.434, lon: -112.008, continent: "North America" },
+            { icao: "CYYZ", name: "Toronto Pearson", lat: 43.677, lon: -79.630, continent: "North America" },
+            { icao: "CYVR", name: "Vancouver Intl", lat: 49.194, lon: -123.184, continent: "North America" },
+            { icao: "CYUL", name: "Montreal-Trudeau", lat: 45.470, lon: -73.740, continent: "North America" },
+            { icao: "MMMX", name: "Mexico City", lat: 19.436, lon: -99.072, continent: "North America" },
+            { icao: "MMUN", name: "Cancún", lat: 21.036, lon: -86.877, continent: "North America" },
+
+            // Europe
+            { icao: "LPPT", name: "Lisboa, Portugal", lat: 38.774, lon: -9.134, continent: "Europe" },
+            { icao: "LPPR", name: "Porto, Portugal", lat: 41.242, lon: -8.678, continent: "Europe" },
+            { icao: "LPFR", name: "Faro, Portugal", lat: 37.014, lon: -7.965, continent: "Europe" },
+            { icao: "LPMA", name: "Funchal, Madeira", lat: 32.694, lon: -16.774, continent: "Europe" },
+            { icao: "LPAZ", name: "Santa Maria, Açores", lat: 36.974, lon: -25.170, continent: "Europe" },
+            { icao: "LFPG", name: "Paris CDG", lat: 49.009, lon: 2.547, continent: "Europe" },
+            { icao: "EGLL", name: "London Heathrow", lat: 51.470, lon: -0.454, continent: "Europe" },
+            { icao: "EDDF", name: "Frankfurt", lat: 50.033, lon: 8.570, continent: "Europe" },
+            { icao: "LEMD", name: "Madrid Barajas", lat: 40.471, lon: -3.567, continent: "Europe" },
+            { icao: "LEBL", name: "Barcelona El Prat", lat: 41.297, lon: 2.078, continent: "Europe" },
+            { icao: "EHAM", name: "Amsterdam Schiphol", lat: 52.308, lon: 4.764, continent: "Europe" },
+            { icao: "LIRF", name: "Rome Fiumicino", lat: 41.800, lon: 12.238, continent: "Europe" },
+            { icao: "EDDM", name: "Munich", lat: 48.353, lon: 11.786, continent: "Europe" },
+            { icao: "LSZH", name: "Zurich", lat: 47.464, lon: 8.549, continent: "Europe" },
+            { icao: "EKCH", name: "Copenhagen", lat: 55.618, lon: 12.650, continent: "Europe" },
+            { icao: "LOWW", name: "Vienna Intl", lat: 48.110, lon: 16.569, continent: "Europe" },
+            { icao: "ESSA", name: "Stockholm Arlanda", lat: 59.651, lon: 17.918, continent: "Europe" },
+            { icao: "EBBR", name: "Brussels Zaventem", lat: 50.901, lon: 4.484, continent: "Europe" },
+            { icao: "LEPA", name: "Palma de Mallorca", lat: 39.551, lon: 2.738, continent: "Europe" },
+
+            // Asia
+            { icao: "RJTT", name: "Tokyo Haneda", lat: 35.549, lon: 139.779, continent: "Asia" },
+            { icao: "RJAA", name: "Tokyo Narita", lat: 35.764, lon: 140.386, continent: "Asia" },
+            { icao: "OMDB", name: "Dubai Intl", lat: 25.253, lon: 55.365, continent: "Asia" },
+            { icao: "OTHH", name: "Doha Hamad", lat: 25.273, lon: 51.608, continent: "Asia" },
+            { icao: "VHHH", name: "Hong Kong", lat: 22.308, lon: 113.914, continent: "Asia" },
+            { icao: "WSSS", name: "Singapore Changi", lat: 1.350, lon: 103.994, continent: "Asia" },
+            { icao: "RKSI", name: "Seoul Incheon", lat: 37.460, lon: 126.440, continent: "Asia" },
+            { icao: "VIDP", name: "Delhi, India", lat: 28.566, lon: 77.103, continent: "Asia" },
+            { icao: "VABB", name: "Mumbai, India", lat: 19.088, lon: 72.867, continent: "Asia" },
+            { icao: "ZBAA", name: "Beijing Capital", lat: 40.080, lon: 116.584, continent: "Asia" },
+            { icao: "VTBS", name: "Bangkok Suvarnabhumi", lat: 13.690, lon: 100.750, continent: "Asia" },
+            { icao: "WMKK", name: "Kuala Lumpur Intl", lat: 2.745, lon: 101.709, continent: "Asia" },
+            { icao: "ZGGG", name: "Guangzhou Baiyun", lat: 23.392, lon: 113.298, continent: "Asia" },
+            { icao: "RCTP", name: "Taiwan Taoyuan", lat: 25.079, lon: 121.234, continent: "Asia" },
+
+            // Africa
+            { icao: "FACT", name: "Cape Town", lat: -33.971, lon: 18.601, continent: "Africa" },
+            { icao: "FAOR", name: "Johannesburg", lat: -26.139, lon: 28.246, continent: "Africa" },
+            { icao: "HECA", name: "Cairo, Egypt", lat: 30.121, lon: 31.405, continent: "Africa" },
+            { icao: "DNMM", name: "Lagos, Nigeria", lat: 6.577, lon: 3.321, continent: "Africa" },
+            { icao: "HKJK", name: "Nairobi, Kenya", lat: -1.319, lon: 36.927, continent: "Africa" },
+            { icao: "GMMN", name: "Casablanca, Marrocos", lat: 33.367, lon: -7.589, continent: "Africa" },
+            { icao: "DAAG", name: "Algiers, Algéria", lat: 36.691, lon: 3.215, continent: "Africa" },
+            { icao: "HAAB", name: "Addis Ababa, Etiópia", lat: 8.977, lon: 38.799, continent: "Africa" },
+            { icao: "DGAA", name: "Accra, Gana", lat: 5.605, lon: -0.166, continent: "Africa" },
+
+            // Oceania
+            { icao: "YSSY", name: "Sydney Kingsford", lat: -33.946, lon: 151.177, continent: "Oceania" },
+            { icao: "YMML", name: "Melbourne", lat: -37.673, lon: 144.843, continent: "Oceania" },
+            { icao: "NZAA", name: "Auckland", lat: -37.008, lon: 174.791, continent: "Oceania" },
+            { icao: "YBBN", name: "Brisbane", lat: -27.384, lon: 153.117, continent: "Oceania" },
+            { icao: "YPPH", name: "Perth", lat: -31.940, lon: 115.966, continent: "Oceania" },
+            { icao: "NZCH", name: "Christchurch", lat: -43.489, lon: 172.532, continent: "Oceania" },
+            { icao: "YPAD", name: "Adelaide", lat: -34.945, lon: 138.530, continent: "Oceania" },
+            { icao: "NWWW", name: "Nouméa, New Caledonia", lat: -22.014, lon: 166.213, continent: "Oceania" }
+        ];
+
+        var map = L.map('map', { zoomControl: false }).setView([20, 0], 2);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+        var routeLayer = L.layerGroup().addTo(map);
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'pt' ? 'en' : 'pt';
+            document.getElementById('langFlag').innerText = currentLang === 'pt' ? '🇺🇸' : '🇧🇷';
+            updateUI();
+        }
+
+        function updateUI() {
+            const s = i18n[currentLang];
+            document.querySelectorAll('[data-i18n]').forEach(el => el.innerText = s[el.getAttribute('data-i18n')]);
+            
+            const dSelect = document.getElementById('durationSelect');
+            dSelect.innerHTML = `
+                <option value="short">${s.durShort}</option>
+                <option value="medium">${s.durMedium}</option>
+                <option value="long">${s.durLong}</option>
+            `;
+        }
+
+        function generateRoute() {
+            routeLayer.clearLayers();
+            document.getElementById('messageBox').classList.add('hidden');
+            
+            const continent = document.getElementById('continentSelect').value;
+            const durationType = document.getElementById('durationSelect').value;
+            
+            let flatPlanes = [];
+            Object.values(aircraftDB).forEach(cat => flatPlanes = flatPlanes.concat(cat));
+            const aircraftName = document.getElementById('aircraftSelect').value;
+            const aircraft = flatPlanes.find(a => a.name === aircraftName);
+            
+            let minNM, maxNM;
+            if (durationType === 'short') { minNM = aircraft.speed * 0.4; maxNM = aircraft.speed * 1.0; }
+            else if (durationType === 'medium') { minNM = aircraft.speed * 1.5; maxNM = aircraft.speed * 3.5; }
+            else { minNM = aircraft.speed * 5; maxNM = 12000; }
+
+            let pool = airportDB.filter(a => continent === 'any' || a.continent === continent);
+
+            let valid = false, origin, dest, dist, attempts = 0;
+            while (!valid && attempts < 500) {
+                attempts++;
+                origin = pool[Math.floor(Math.random() * pool.length)];
+                let possible = airportDB.filter(d => {
+                    if (d.icao === origin.icao) return false;
+                    let dNM = getDist(origin.lat, origin.lon, d.lat, d.lon);
+                    return dNM >= minNM && dNM <= maxNM;
+                });
+                if (possible.length > 0) {
+                    dest = possible[Math.floor(Math.random() * possible.length)];
+                    dist = getDist(origin.lat, origin.lon, dest.lat, dest.lon);
+                    valid = true;
+                }
+            }
+
+            if (!valid) {
+                document.getElementById('messageBox').innerText = i18n[currentLang].errNoRoute;
+                document.getElementById('messageBox').classList.remove('hidden');
+                return;
+            }
+
+            const totalMin = Math.round((dist / aircraft.speed) * 60) + 20;
+            const hdg = getHeading(origin.lat, origin.lon, dest.lat, dest.lon);
+            const altitude = calculateAltitude(aircraft.type, dist);
+
+            document.getElementById('depICAO').innerText = origin.icao;
+            document.getElementById('arrICAO').innerText = dest.icao;
+            document.getElementById('depName').innerText = origin.name;
+            document.getElementById('arrName').innerText = dest.name;
+            document.getElementById('distanceVal').innerText = Math.round(dist) + " NM";
+            document.getElementById('eteVal').innerText = `${Math.floor(totalMin/60)}h ${totalMin%60}m`;
+            document.getElementById('hdgVal').innerText = Math.round(hdg).toString().padStart(3, '0') + "°";
+            document.getElementById('altVal').innerText = altitude.toLocaleString() + " FT";
+            
+            document.getElementById('resultsPanel').classList.remove('hidden');
+            document.getElementById('resultsPanel').classList.add('flex');
+
+            const line = L.polyline([[origin.lat, origin.lon], [dest.lat, dest.lon]], { color: '#3b82f6', weight: 4, dashArray: '5, 10' }).addTo(routeLayer);
+            
+            // Adicionar Marcadores
+            L.circleMarker([origin.lat, origin.lon], { color: '#22c55e', fillOpacity: 1, radius: 6 }).addTo(routeLayer).bindPopup(`Origem: ${origin.icao}`);
+            L.circleMarker([dest.lat, dest.lon], { color: '#ef4444', fillOpacity: 1, radius: 6 }).addTo(routeLayer).bindPopup(`Destino: ${dest.icao}`);
+
+            map.fitBounds(line.getBounds(), { padding: [100, 100] });
+        }
+
+        function getDist(lat1, lon1, lat2, lon2) {
+            const R = 3440; // NM
+            const dLat = (lat2-lat1)*Math.PI/180;
+            const dLon = (lon2-lon1)*Math.PI/180;
+            const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function getHeading(lat1, lon1, lat2, lon2) {
+            const φ1 = lat1 * Math.PI / 180;
+            const φ2 = lat2 * Math.PI / 180;
+            const Δλ = (lon2 - lon1) * Math.PI / 180;
+            const y = Math.sin(Δλ) * Math.cos(φ2);
+            const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+            let brng = Math.atan2(y, x) * 180 / Math.PI;
+            return (brng + 360) % 360;
+        }
+
+        function calculateAltitude(type, dist) {
+            switch(type) {
+                case 'jet': return dist < 200 ? 24000 : (dist > 1000 ? 38000 : 33000);
+                case 'fighter': return 35000;
+                case 'turboprop': return dist < 100 ? 12000 : 22000;
+                case 'prop': return dist < 50 ? 3500 : 8500;
+                case 'heli': return 1500;
+                default: return 10000;
+            }
+        }
+
+        async function speakFlightPlan() {
+            const dep = document.getElementById('depICAO').innerText;
+            const arr = document.getElementById('arrICAO').innerText;
+            const hdg = document.getElementById('hdgVal').innerText;
+            const alt = document.getElementById('altVal').innerText;
+            
+            const text = currentLang === 'pt' 
+                ? `Atenção comandante. Voo de ${dep} para ${arr}. Proa inicial de ${hdg.replace('°','')} graus, subindo para ${alt.replace(' FT','')}. Boa viagem.`
+                : `Attention Captain. Flight from ${dep} to ${arr}. Initial heading ${hdg.replace('°','')}, climbing to ${alt.replace(' FT','')}. Have a safe flight.`;
+            
+            try {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text }] }],
+                        generationConfig: {
+                            responseModalities: ["AUDIO"],
+                            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } }
+                        }
+                    })
+                });
+                const data = await res.json();
+                const pcmData = data.candidates[0].content.parts[0].inlineData.data;
+                const blob = new Blob([Uint8Array.from(atob(pcmData), c => c.charCodeAt(0))], { type: 'audio/l16;rate=24000' });
+                new Audio(URL.createObjectURL(blob)).play();
+            } catch (e) { console.error("TTS error", e); }
+        }
+
+        const aSelect = document.getElementById('aircraftSelect');
+        for (const [cat, planes] of Object.entries(aircraftDB)) {
+            const g = document.createElement('optgroup'); g.label = cat;
+            planes.forEach(p => { 
+                const o = document.createElement('option'); 
+                o.value = p.name; o.innerText = p.name; 
+                g.appendChild(o); 
+            });
+            aSelect.appendChild(g);
+        }
+
+        updateUI();
+    </script>
+</body>
+</html>
